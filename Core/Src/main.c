@@ -16,14 +16,13 @@
   ******************************************************************************
   */
 
-#include "arm_const_structs.h"
-/* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
-#include "main.h"
-#include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "main.h"
+#include "arm_const_structs.h"
+#include "cmsis_os.h"
 
 /* USER CODE END Includes */
 
@@ -188,7 +187,7 @@ void adc_task(void *param){
 		//count++;
 		//if (count >= 30){
 		//	count = 0;
-			xQueueSend(fft_q, &mod, 10);
+			//xQueueSend(fft_q, &mod, 10);
 		//}
 		//volatile TickType_t stop = xTaskGetTickCount();
 		//(void)fund_phase;
@@ -317,6 +316,7 @@ int main(void)
 
   /* CRIADO COM BASE NA FUNÇÃO terminal_task  */
   (void)xTaskCreate(terminal_task, "Console", 256, NULL, 3, NULL);
+  (void)xTaskCreate(adc_task, "ADC", 2048, NULL, 6, NULL);
 
 
   /* USER CODE END RTOS_THREADS */
