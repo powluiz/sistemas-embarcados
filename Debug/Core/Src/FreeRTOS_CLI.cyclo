@@ -1,0 +1,7 @@
+../Core/Src/FreeRTOS_CLI.c:112:16:FreeRTOS_CLIRegisterCommand	4
+../Core/Src/FreeRTOS_CLI.c:153:12:FreeRTOS_CLIProcessCommand	12
+../Core/Src/FreeRTOS_CLI.c:230:8:FreeRTOS_CLIGetOutputBuffer	1
+../Core/Src/FreeRTOS_CLI.c:236:14:FreeRTOS_CLIGetParameter	11
+../Core/Src/FreeRTOS_CLI.c:295:13:prvRegisterCommand	3
+../Core/Src/FreeRTOS_CLI.c:325:19:prvHelpCommand	3
+../Core/Src/FreeRTOS_CLI.c:360:15:prvGetNumberOfParameters	5
