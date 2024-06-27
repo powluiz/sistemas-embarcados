@@ -147,8 +147,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
     portYIELD_FROM_ISR(pxHigherPriorityTaskWoken);
 }
 
-/* Apenas tarefas podem usar isso aqui. Interrupções não podem, pois isso é uma
- * função bloqueante */
+/* Apenas tarefas podem usar isso aqui. Interrupções não podem, pois isso é uma função bloqueante */
 BaseType_t UART_TX_RTOS(const char *pData, uint16_t Size) {
     BaseType_t ret = pdTRUE;
 
@@ -237,68 +236,106 @@ void HAL_DAC_ConvCpltCallbackCh1(DAC_HandleTypeDef *hadc) {
 #endif
 }
 
-void terminal_task(void *param) {
+static BaseType_t prvListRuntimeCommand (char *pcWriteBuffer,
+                                        size_t xWriteBufferLen,
+                                        const char *pcCommandString) {
+
+int8_t *parameter;
+	BaseType_t parameter_lenght;
+	BaseType_t xReturn;
+
+	parameter = FreeRTOS_CLIGetParameter(pcCommandString, 1, &parameter_lenght);
+
+  if (!strncmp(parameter, "task", parameter_lenght)) {
+    vTaskList(pcWriteBuffer);
+  } else if (!strncmp(parameter, "info", parameter_lenght)) {
+    vTaskGetRunTimeStats(pcWriteBuffer);
+  } else {
+    snprintf(pcWriteBuffer, xWriteBufferLen, "Unknown parameter %s\r\n", parameter);
+  }
+	
+	xReturn = pdFALSE;
+
+	return xReturn;
+}
+
+
+/* Comando para alterar sinal */
+static const CLI_Command_Definition_t xListRuntimeCommand = {
+  "runtime",
+	"runtime: List Runtime Info (params: task ou run)\r\n\r\n",
+	prvListRuntimeCommand,
+    1
+};
+
+
+
+
+uint16_t sin_wave[256];
+uint16_t sin_wave_3rd_harmonic[256];
+static BaseType_t prvTaskDACCommand( char *pcWriteBuffer,
+                                      size_t xWriteBufferLen,
+										                  const char *pcCommandString )
+{
+    BaseType_t parameter_lenght;
+    const char *parameter = FreeRTOS_CLIGetParameter(pcCommandString, 1, &parameter_lenght);
+
+	if (!strcmp(parameter, "sine")) {
+		HAL_TIM_Base_Stop(&htim2);
+		HAL_DAC_Stop_DMA(&hdac1, DAC_CHANNEL_1);
+		HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1, (uint32_t*)sin_wave, 256, DAC_ALIGN_12B_R);
+	    HAL_TIM_Base_Start(&htim2);
+	    strcpy(pcWriteBuffer, "Sine set for the DAC signal\n\r");
+	}else if (!strcmp(parameter, "sine3rd")){
+		HAL_TIM_Base_Stop(&htim2);
+		HAL_DAC_Stop_DMA(&hdac1, DAC_CHANNEL_1);
+		HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1, (uint32_t*)sin_wave_3rd_harmonic, 256, DAC_ALIGN_12B_R);
+	    HAL_TIM_Base_Start(&htim2);
+	    strcpy(pcWriteBuffer, "Sine 3rd harmonic set for the DAC signal\n\r");
+	}else{
+		strcpy(pcWriteBuffer, "Not a valid DAC signal!\n\r");
+	}
+	return pdFALSE;
+}
+
+
+/* Comando para alterar sinal */
+static const CLI_Command_Definition_t xCLIDACCommand = {
+  "dac_signal",
+	"dac_signal: Altera o formato da onda (params: sine ou sine3rd)\r\n\r\n",
+	prvTaskDACCommand,
+    1
+};
+
+
+
+
+void terminal_task (void *param) {
+
+//  FreeRTOS_CLIRegisterCommand( &xCLIDACCommand );
+//  FreeRTOS_CLIRegisterCommand( &xListRuntimeCommand );
+
+
     char data;
     char data_uart;
-    /* O desejado é ligar a interrupção eternamente, mas não é oq acontece */
     HAL_UART_Receive_IT(&hlpuart1, (uint8_t *)&data_uart, 1);
     hlpuart1.RxISR = HAL_UART_RxCpltCallback;
-    while (1) {
-        UART_RX_RTOS(
-            &data,
-            portMAX_DELAY);  // Ponto de bloqueio (bloqueia por portMAX_DELAY)
 
-        // tem um caracter em data. Para aparecer o caractere digitado,
-        // precisamos devolver:
-        UART_TX_RTOS(&data, 1);
+
+    while (1) {
+      UART_RX_RTOS(&data, portMAX_DELAY);  // Ponto de bloqueio (bloqueia por portMAX_DELAY)
+
+      if (data == '\r') {
+        UART_TX_RTOS("\r\n", strlen("\r\n"));
+      } else {
+        UART_TX_RTOS(&data, 1);   
+      }
     }
 }
 
-//static BaseType_t prvListRuntimeInfo(char *pcWriteBuffer,
-//                                      size_t xWriteBufferLen,
-//                                      const char *pcCommandString) {
-//
-//int8_t *pcParameter1;
-//	BaseType_t xParameter1StringLength;
-//	BaseType_t xReturn;
-//
-//	pcParameter1 = FreeRTOS_CLIGetParameter(pcCommandString, 1, &xParameter1StringLength);
-//
-//	if (pcParameter1 != NULL) {
-//		if (strncmp((const char *)pcParameter1, "task", xParameter1StringLength) == 0) {
-//			vTaskList(pcWriteBuffer);
-//		} else if (strncmp((const char *)pcParameter1, "run", xParameter1StringLength) == 0) {
-//			vTaskGetRunTimeStats(pcWriteBuffer);
-//		} else {
-//			snprintf(pcWriteBuffer, xWriteBufferLen, "Unknown parameter %s\r\n", pcParameter1);
-//		}
-//	} else {
-//		snprintf(pcWriteBuffer, xWriteBufferLen, "First parameter is NULL\r\n");
-//	}
-//
-//	/* Return pdFALSE, as there is no more output to write after this
-//	function has executed. */
-//	xReturn = pdFALSE;
-//
-//	return xReturn;
-//}
-//
 
 
 
-
-
-//
-//
-///* Definição de comando para alterar sinal */
-//static const CLI_Command_Definition_t xADCCommand =
-//{
-//    "sinal_dac",
-//	"sinal_dac: Define o sinal DAC (sine or sine3rd)\r\n\r\n",
-//	"sinal_dac: Define the DAC signal (sine or sine3rd)\r\n\r\n",
-//	prvTaskDACCommand,
-//    1
-//};
 
 
 
@@ -392,7 +429,7 @@ int main(void)
   /* USER CODE BEGIN RTOS_THREADS */
 
     /* CRIADO COM BASE NA FUNÇÃO terminal_task  */
-    //(void)xTaskCreate(terminal_task, "Console", 256, NULL, 3, NULL);
+    (void)xTaskCreate(terminal_task, "Console", 256, NULL, 3, NULL);
     (void)xTaskCreate(adc_task, "ADC", 2048, NULL, 6, NULL);
 
   /* USER CODE END RTOS_THREADS */
