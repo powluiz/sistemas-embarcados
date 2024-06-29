@@ -133,7 +133,7 @@ void StartDefaultTask(void const *argument);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-/* Essas funções são utilizadas dentro das interrupções */
+char uart_data;
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     portBASE_TYPE pxHigherPriorityTaskWoken = pdFALSE;
     char data = huart->Instance->RDR;
@@ -157,8 +157,20 @@ BaseType_t UART_TX_RTOS(const char *pData, uint16_t Size) {
     return ret;
 }
 
-BaseType_t UART_RX_RTOS(char *pData, TickType_t timeout) {
+// Antiga UART_RX_RTOS - Retorna os dados recebidos pela UART
+BaseType_t get_char_from_uart(char *pData, TickType_t timeout) {
     return xQueueReceive(uart_rx_q, pData, timeout);
+}
+
+void print_uart_char(char inputChar) {
+    UART_TX_RTOS(&inputChar, 1);  // Envia um único caractere
+}
+
+void print_uart_string(const char *inputString) {
+    while (*inputString != '\0') {
+        UART_TX_RTOS(inputString, 1);  // Envia um caractere por vez
+        inputString++;
+    }
 }
 
 void adc_task(void *param) {
@@ -237,38 +249,52 @@ void HAL_DAC_ConvCpltCallbackCh1(DAC_HandleTypeDef *hadc) {
 #endif
 }
 
-static BaseType_t prvListRuntimeCommand(char *pcWriteBuffer,
-                                        size_t xWriteBufferLen,
-                                        const char *pcCommandString) {
-    int8_t *parameter;
-    BaseType_t parameter_lenght;
-    BaseType_t xReturn;
+/* ---------------- Get Installed Tasks ---------------- */
 
-    parameter = FreeRTOS_CLIGetParameter(pcCommandString, 1, &parameter_lenght);
+static BaseType_t getInstalledTasksFunction(char *pcWriteBuffer,
+                                            size_t xWriteBufferLen,
+                                            const char *pcCommandString) {
+    static BaseType_t state = 0;
 
-    if (!strncmp(parameter, "task", parameter_lenght)) {
-        vTaskList(pcWriteBuffer);
-    } else if (!strncmp(parameter, "info", parameter_lenght)) {
-        vTaskGetRunTimeStats(pcWriteBuffer);
+    if (state == 0) {
+        char *head = "Name		State  Priority  Stack  Number\n\r";
+        (void)xWriteBufferLen;
+        strcpy(pcWriteBuffer, head);
+        vTaskList(&pcWriteBuffer[strlen(head)]);
+        state = 1;
+        return pdTRUE;
     } else {
-        snprintf(pcWriteBuffer, xWriteBufferLen, "Unknown parameter %s\r\n",
-                 parameter);
+        state = 0;
+        strcpy(pcWriteBuffer, "\n\r");
+        return pdFALSE;
     }
-
-    xReturn = pdFALSE;
-
-    return xReturn;
 }
 
-/* Comando para alterar sinal */
-static const CLI_Command_Definition_t xListRuntimeCommand = {
-    "runtime", "runtime: List Runtime Info (params: task ou run)\r\n\r\n",
-    prvListRuntimeCommand, 1};
+static const CLI_Command_Definition_t xGetInstalledTasksCommand = {
+    "tasks", "tasks: list all tasks\n\n\r", getInstalledTasksFunction, 0};
 
+/* ---------------- Get Runtime Info ---------------- */
+
+static BaseType_t getRuntimeStatsFunction(char *pcWriteBuffer,
+                                          size_t xWriteBufferLen,
+                                          const char *pcCommandString) {
+    char *head = "Name		Abs Time      % Time\n\r";
+    (void)xWriteBufferLen;
+    strcpy(pcWriteBuffer, head);
+    vTaskGetRunTimeStats(&pcWriteBuffer[strlen(head)]);
+    return pdFALSE;
+}
+
+static const CLI_Command_Definition_t xGetRuntimeCommand = {
+    "runtime", "runtime: Show the runtime info\n\n\r", getRuntimeStatsFunction,
+    0};
+
+/* ---------------- Change Sin Wave ---------------- */
 uint16_t sin_wave[256];
 uint16_t sin_wave_3rd_harmonic[256];
-static BaseType_t prvTaskDACCommand(char *pcWriteBuffer, size_t xWriteBufferLen,
-                                    const char *pcCommandString) {
+static BaseType_t changeWaveFunction(char *pcWriteBuffer,
+                                     size_t xWriteBufferLen,
+                                     const char *pcCommandString) {
     BaseType_t parameter_lenght;
     const char *parameter =
         FreeRTOS_CLIGetParameter(pcCommandString, 1, &parameter_lenght);
@@ -279,7 +305,7 @@ static BaseType_t prvTaskDACCommand(char *pcWriteBuffer, size_t xWriteBufferLen,
         HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1, (uint32_t *)sin_wave, 256,
                           DAC_ALIGN_12B_R);
         HAL_TIM_Base_Start(&htim2);
-        strcpy(pcWriteBuffer, "Sine set for the DAC signal\n\r");
+        strcpy(pcWriteBuffer, "Sine Signal set\n\r");
     } else if (!strcmp(parameter, "sine3rd")) {
         HAL_TIM_Base_Stop(&htim2);
         HAL_DAC_Stop_DMA(&hdac1, DAC_CHANNEL_1);
@@ -287,37 +313,95 @@ static BaseType_t prvTaskDACCommand(char *pcWriteBuffer, size_t xWriteBufferLen,
                           (uint32_t *)sin_wave_3rd_harmonic, 256,
                           DAC_ALIGN_12B_R);
         HAL_TIM_Base_Start(&htim2);
-        strcpy(pcWriteBuffer, "Sine 3rd harmonic set for the DAC signal\n\r");
+        strcpy(pcWriteBuffer, "Sine3rd Signal set\n\r");
     } else {
-        strcpy(pcWriteBuffer, "Not a valid DAC signal!\n\r");
+        strcpy(pcWriteBuffer, "Invalid wave signal!\n\r");
     }
     return pdFALSE;
 }
 
-/* Comando para alterar sinal */
-static const CLI_Command_Definition_t xCLIDACCommand = {
-    "dac_signal",
-    "dac_signal: Altera o formato da onda (params: sine ou sine3rd)\r\n\r\n",
-    prvTaskDACCommand, 1};
+static const CLI_Command_Definition_t xChangeWaveCommand = {
+    "wave", "wave: Changes the DAC wave signal (params: sine | sine3rd)\n\n\r",
+    changeWaveFunction, 1};
 
-void terminal_task(void *param) {
-    //  FreeRTOS_CLIRegisterCommand( &xCLIDACCommand );
-    //  FreeRTOS_CLIRegisterCommand( &xListRuntimeCommand );
+/* ---------------- Clear Terminal ---------------- */
 
-    char data;
-    char data_uart;
-    HAL_UART_Receive_IT(&hlpuart1, (uint8_t *)&data_uart, 1);
+static BaseType_t clearTerminalFunction(char *pcWriteBuffer,
+                                        size_t xWriteBufferLen,
+                                        const char *pcCommandString) {
+    strcpy(pcWriteBuffer, "\033[H\033[J\n\r");
+    return pdFALSE;
+}
+
+static const CLI_Command_Definition_t xClearTerminalCommand = {
+    "clear", "clear: Clear the terminal\n\n\r", clearTerminalFunction, 0};
+
+/* ---------------- Terminal Task ---------------- */
+
+#define MAX_INPUT_LENGTH 50
+#define MAX_OUTPUT_LENGTH 100
+
+void terminal_task(void *params) {
+    int8_t cRxedChar, cInputIndex = 0;
+    BaseType_t xMoreDataToFollow;
+
+    /* Buffers de entrada e saída */
+    static int8_t pcInputString[MAX_INPUT_LENGTH];
+    static int8_t pcOutputString[MAX_OUTPUT_LENGTH];
+
+    FreeRTOS_CLIRegisterCommand(&xGetInstalledTasksCommand);
+    FreeRTOS_CLIRegisterCommand(&xGetRuntimeCommand);
+    FreeRTOS_CLIRegisterCommand(&xChangeWaveCommand);
+    FreeRTOS_CLIRegisterCommand(&xClearTerminalCommand);
+
+    print_uart_string("----- FreeRTOS Terminal -----\r\n\n");
+
+    /* Recepção de 1byte pela uart */
+    HAL_UART_Receive_IT(&hlpuart1, (uint8_t *)&uart_data, 1);
     hlpuart1.RxISR = HAL_UART_RxCpltCallback;
 
     while (1) {
-        UART_RX_RTOS(
-            &data,
-            portMAX_DELAY);  // Ponto de bloqueio (bloqueia por portMAX_DELAY)
+        // Espera indefinidamente por um caractere
+        get_char_from_uart(&cRxedChar, portMAX_DELAY);
 
-        if (data == '\r') {
-            UART_TX_RTOS("\r\n", strlen("\r\n"));
+        if (cRxedChar == '\r') {
+            /* Tecla "Enter" seja pressionada */
+            print_uart_string("\r\n");
+
+            /* Execução do comando inserido ao pressionar enter: */
+            do {
+                xMoreDataToFollow = FreeRTOS_CLIProcessCommand(
+                    pcInputString,    /* string do comando.*/
+                    pcOutputString,   /* buffer de saída. */
+                    MAX_OUTPUT_LENGTH /* Tamanho do buffer de saída. */
+                );
+
+                print_uart_string(pcOutputString);
+            } while (xMoreDataToFollow != pdFALSE);
+
+            /* Limpa a string de entrada */
+            cInputIndex = 0;
+            memset(pcInputString, 0x00, MAX_INPUT_LENGTH);
+
         } else {
-            UART_TX_RTOS(&data, 1);
+            if (cRxedChar == '\n') {
+                // Ignora o \n
+            } else if (cRxedChar == '\b') {
+                /* Tratamento do backspace */
+                if (cInputIndex > 0) {
+                    cInputIndex--;
+                    pcInputString[cInputIndex] = '\0';
+                    print_uart_string("\b \b");
+                }
+            } else {
+                // Adiciona o caractere na string de entrada
+                if (cInputIndex < MAX_INPUT_LENGTH) {
+                    pcInputString[cInputIndex] = cRxedChar;
+                    cInputIndex++;
+                }
+                // print_uart_string(&cRxedChar);
+                print_uart_char(cRxedChar);
+            }
         }
     }
 }
@@ -393,7 +477,6 @@ int main(void) {
 
     /* USER CODE BEGIN RTOS_THREADS */
 
-    /* CRIADO COM BASE NA FUNÇÃO terminal_task  */
     (void)xTaskCreate(terminal_task, "Console", 256, NULL, 3, NULL);
     (void)xTaskCreate(adc_task, "ADC", 2048, NULL, 6, NULL);
 

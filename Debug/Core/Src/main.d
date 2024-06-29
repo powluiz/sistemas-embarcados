@@ -50,11 +50,11 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
  ../Middlewares/Third_Party/FreeRTOS/Source/include/queue.h \
  ../Middlewares/Third_Party/FreeRTOS/Source/include/event_groups.h \
  ../Middlewares/Third_Party/FreeRTOS/Source/include/timers.h \
+ ../Core/Inc/FreeRTOS_CLI.h \
  C:/Users/luiz1/STM32Cube/Repository/STM32Cube_FW_G4_V1.5.2/Drivers/CMSIS/DSP/Include/arm_const_structs.h \
  C:/Users/luiz1/STM32Cube/Repository/STM32Cube_FW_G4_V1.5.2/Drivers/CMSIS/DSP/Include/arm_math.h \
  ../Drivers/CMSIS/Include/cmsis_compiler.h \
- C:/Users/luiz1/STM32Cube/Repository/STM32Cube_FW_G4_V1.5.2/Drivers/CMSIS/DSP/Include/arm_common_tables.h \
- ../Core/Inc/FreeRTOS_CLI.h
+ C:/Users/luiz1/STM32Cube/Repository/STM32Cube_FW_G4_V1.5.2/Drivers/CMSIS/DSP/Include/arm_common_tables.h
 ../Core/Inc/main.h:
 ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h:
 ../Core/Inc/stm32g4xx_hal_conf.h:
@@ -107,8 +107,8 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
 ../Middlewares/Third_Party/FreeRTOS/Source/include/queue.h:
 ../Middlewares/Third_Party/FreeRTOS/Source/include/event_groups.h:
 ../Middlewares/Third_Party/FreeRTOS/Source/include/timers.h:
+../Core/Inc/FreeRTOS_CLI.h:
 C:/Users/luiz1/STM32Cube/Repository/STM32Cube_FW_G4_V1.5.2/Drivers/CMSIS/DSP/Include/arm_const_structs.h:
 C:/Users/luiz1/STM32Cube/Repository/STM32Cube_FW_G4_V1.5.2/Drivers/CMSIS/DSP/Include/arm_math.h:
 ../Drivers/CMSIS/Include/cmsis_compiler.h:
 C:/Users/luiz1/STM32Cube/Repository/STM32Cube_FW_G4_V1.5.2/Drivers/CMSIS/DSP/Include/arm_common_tables.h:
-../Core/Inc/FreeRTOS_CLI.h:
