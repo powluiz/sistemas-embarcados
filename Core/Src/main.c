@@ -27,6 +27,7 @@
 #include "arm_const_structs.h"
 #include "cmsis_os.h"
 #include "main.h"
+#include "message_buffer.h"
 
 /* USER CODE END Includes */
 
@@ -61,6 +62,8 @@ TIM_HandleTypeDef htim3;
 osThreadId defaultTaskHandle;
 /* USER CODE BEGIN PV */
 
+SemaphoreHandle_t mutex_uart;
+MessageBufferHandle_t message_buffer;
 SemaphoreHandle_t sem_tx_uart;
 SemaphoreHandle_t sem_adc;
 QueueHandle_t uart_rx_q;
@@ -138,6 +141,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     portBASE_TYPE pxHigherPriorityTaskWoken = pdFALSE;
     char data = huart->Instance->RDR;
     xQueueSendFromISR(uart_rx_q, &data, &pxHigherPriorityTaskWoken);
+    HAL_UART_Receive_IT(&hlpuart1, (uint8_t *)&uart_data, 1);
     portYIELD_FROM_ISR(pxHigherPriorityTaskWoken);
 }
 
@@ -147,29 +151,38 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
     portYIELD_FROM_ISR(pxHigherPriorityTaskWoken);
 }
 
-/* Apenas tarefas podem usar isso aqui. Interrupções não podem, pois isso é uma
- * função bloqueante */
-BaseType_t UART_TX_RTOS(const char *pData, uint16_t Size) {
-    BaseType_t ret = pdTRUE;
-
-    ret = HAL_UART_Transmit_DMA(&hlpuart1, (uint8_t *)pData, Size);
-    xSemaphoreTake(sem_tx_uart, portMAX_DELAY);
-    return ret;
-}
-
 // Antiga UART_RX_RTOS - Retorna os dados recebidos pela UART
 BaseType_t get_char_from_uart(char *pData, TickType_t timeout) {
     return xQueueReceive(uart_rx_q, pData, timeout);
 }
 
-void print_uart_char(char inputChar) {
-    UART_TX_RTOS(&inputChar, 1);  // Envia um único caractere
+void print_string(char *string, TickType_t timeout) {
+    if (xSemaphoreTake(mutex_uart, timeout) == pdTRUE) {
+        (void)xMessageBufferSend(message_buffer, string, strlen(string),
+                                 portMAX_DELAY);
+        xSemaphoreGive(mutex_uart);
+    }
 }
 
-void print_uart_string(const char *inputString) {
-    while (*inputString != '\0') {
-        UART_TX_RTOS(inputString, 1);  // Envia um caractere por vez
-        inputString++;
+void print_char(char string, TickType_t timeout) {
+    if (xSemaphoreTake(mutex_uart, timeout) == pdTRUE) {
+        (void)xMessageBufferSend(message_buffer, &string, 1, portMAX_DELAY);
+        xSemaphoreGive(mutex_uart);
+    }
+}
+
+#define BUFFER_SIZE 512
+
+static void print_task(void *params) {
+    char buffer[BUFFER_SIZE];
+
+    while (1) {
+        size_t size = xMessageBufferReceive(message_buffer, buffer, BUFFER_SIZE,
+                                            portMAX_DELAY);
+        if (size) {
+            HAL_UART_Transmit_DMA(&hlpuart1, (uint8_t *)buffer, size);
+            xSemaphoreTake(sem_tx_uart, portMAX_DELAY);
+        }
     }
 }
 
@@ -254,20 +267,24 @@ void HAL_DAC_ConvCpltCallbackCh1(DAC_HandleTypeDef *hadc) {
 static BaseType_t getInstalledTasksFunction(char *pcWriteBuffer,
                                             size_t xWriteBufferLen,
                                             const char *pcCommandString) {
-    static BaseType_t state = 0;
+    (void)xWriteBufferLen;
+    vTaskList(pcWriteBuffer);
+    return pdFALSE;
 
-    if (state == 0) {
-        char *head = "Name		State  Priority  Stack  Number\n\r";
-        (void)xWriteBufferLen;
-        strcpy(pcWriteBuffer, head);
-        vTaskList(&pcWriteBuffer[strlen(head)]);
-        state = 1;
-        return pdTRUE;
-    } else {
-        state = 0;
-        strcpy(pcWriteBuffer, "\n\r");
-        return pdFALSE;
-    }
+    // static BaseType_t state = 0;
+
+    // if (state == 0) {
+    //     // char *head = "Name		State  Priority  Stack
+    //     Number\n\r"; (void)xWriteBufferLen; vTaskList(pcWriteBuffer);
+    //     // strcpy(pcWriteBuffer, head);
+    //     // vTaskList(&pcWriteBuffer[strlen(head)]);
+    //     state = 1;
+    //     return pdTRUE;
+    // } else {
+    //     state = 0;
+    //     strcpy(pcWriteBuffer, "\n\r");
+    //     return pdFALSE;
+    // }
 }
 
 static const CLI_Command_Definition_t xGetInstalledTasksCommand = {
@@ -354,7 +371,7 @@ void terminal_task(void *params) {
     FreeRTOS_CLIRegisterCommand(&xChangeWaveCommand);
     FreeRTOS_CLIRegisterCommand(&xClearTerminalCommand);
 
-    print_uart_string("----- FreeRTOS Terminal -----\r\n\n");
+    print_string("----- FreeRTOS Terminal -----\r\n\n", portMAX_DELAY);
 
     /* Recepção de 1byte pela uart */
     HAL_UART_Receive_IT(&hlpuart1, (uint8_t *)&uart_data, 1);
@@ -366,7 +383,7 @@ void terminal_task(void *params) {
 
         if (cRxedChar == '\r') {
             /* Tecla "Enter" seja pressionada */
-            print_uart_string("\r\n");
+            print_string("\r\n", portMAX_DELAY);
 
             /* Execução do comando inserido ao pressionar enter: */
             do {
@@ -376,7 +393,7 @@ void terminal_task(void *params) {
                     MAX_OUTPUT_LENGTH /* Tamanho do buffer de saída. */
                 );
 
-                print_uart_string(pcOutputString);
+                print_string(pcOutputString, portMAX_DELAY);
             } while (xMoreDataToFollow != pdFALSE);
 
             /* Limpa a string de entrada */
@@ -391,7 +408,7 @@ void terminal_task(void *params) {
                 if (cInputIndex > 0) {
                     cInputIndex--;
                     pcInputString[cInputIndex] = '\0';
-                    print_uart_string("\b \b");
+                    print_char(cRxedChar, portMAX_DELAY);
                 }
             } else {
                 // Adiciona o caractere na string de entrada
@@ -399,8 +416,7 @@ void terminal_task(void *params) {
                     pcInputString[cInputIndex] = cRxedChar;
                     cInputIndex++;
                 }
-                // print_uart_string(&cRxedChar);
-                print_uart_char(cRxedChar);
+                print_char(cRxedChar, portMAX_DELAY);
             }
         }
     }
@@ -448,7 +464,7 @@ int main(void) {
     /* USER CODE END 2 */
 
     /* USER CODE BEGIN RTOS_MUTEX */
-    /* add mutexes, ... */
+    mutex_uart = xSemaphoreCreateMutex();
 
     /* USER CODE END RTOS_MUTEX */
 
@@ -467,6 +483,7 @@ int main(void) {
     /* USER CODE BEGIN RTOS_QUEUES */
     /* add queues, ... */
 
+    message_buffer = xMessageBufferCreate(BUFFER_SIZE);
     uart_rx_q = xQueueCreate(32, sizeof(char));
     /* USER CODE END RTOS_QUEUES */
 
@@ -478,6 +495,7 @@ int main(void) {
     /* USER CODE BEGIN RTOS_THREADS */
 
     (void)xTaskCreate(terminal_task, "Console", 256, NULL, 3, NULL);
+    (void)xTaskCreate(print_task, "Print Task", 256, NULL, 10, NULL);
     (void)xTaskCreate(adc_task, "ADC", 2048, NULL, 6, NULL);
 
     /* USER CODE END RTOS_THREADS */
