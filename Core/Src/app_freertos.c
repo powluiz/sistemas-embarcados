@@ -1,20 +1,20 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * File Name          : app_freertos.c
-  * Description        : Code for freertos applications
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2024 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * File Name          : app_freertos.c
+ * Description        : Code for freertos applications
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2024 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
@@ -58,15 +58,27 @@ unsigned long getRunTimeCounterValue(void);
 
 /* USER CODE BEGIN 1 */
 /* Functions needed when configGENERATE_RUN_TIME_STATS is on */
-__weak void configureTimerForRunTimeStats(void)
-{
-
+extern TIM_HandleTypeDef htim4;
+void configureTimerForRunTimeStats(void) {
+    /* Inicia a contagem do timer */
+    HAL_TIM_Base_Start_IT(&htim4);
 }
 
-__weak unsigned long getRunTimeCounterValue(void)
-{
-return 0;
+unsigned int ulHighFrequencyTimerTicks = 0;
+unsigned long getRunTimeCounterValue(void) {
+    /* Contagem de ticks do timer */
+    return ulHighFrequencyTimerTicks;
 }
+
+// __weak void configureTimerForRunTimeStats(void)
+// {
+
+// }
+
+// __weak unsigned long getRunTimeCounterValue(void)
+// {
+// return 0;
+// }
 /* USER CODE END 1 */
 
 /* Private application code --------------------------------------------------*/

@@ -1,2 +1,2 @@
-../Core/Src/app_freertos.c:61:13:configureTimerForRunTimeStats	1
-../Core/Src/app_freertos.c:66:22:getRunTimeCounterValue	1
+../Core/Src/app_freertos.c:62:6:configureTimerForRunTimeStats	1
+../Core/Src/app_freertos.c:68:15:getRunTimeCounterValue	1

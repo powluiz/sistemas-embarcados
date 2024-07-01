@@ -3,7 +3,6 @@
 ../Middlewares/Third_Party/FreeRTOS/Source/queue.c:422:13:prvInitialiseNewQueue	24	static
 ../Middlewares/Third_Party/FreeRTOS/Source/queue.c:466:14:prvInitialiseMutex	16	static
 ../Middlewares/Third_Party/FreeRTOS/Source/queue.c:496:16:xQueueCreateMutex	32	static
-../Middlewares/Third_Party/FreeRTOS/Source/queue.c:714:16:xQueueCreateCountingSemaphore	32	static,ignoring_inline_asm
 ../Middlewares/Third_Party/FreeRTOS/Source/queue.c:740:12:xQueueGenericSend	64	static,ignoring_inline_asm
 ../Middlewares/Third_Party/FreeRTOS/Source/queue.c:950:12:xQueueGenericSendFromISR	72	static,ignoring_inline_asm
 ../Middlewares/Third_Party/FreeRTOS/Source/queue.c:1112:12:xQueueGiveFromISR	64	static,ignoring_inline_asm

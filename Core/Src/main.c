@@ -58,6 +58,7 @@ DMA_HandleTypeDef hdma_lpuart1_tx;
 
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim4;
 
 osThreadId defaultTaskHandle;
 /* USER CODE BEGIN PV */
@@ -67,6 +68,8 @@ MessageBufferHandle_t message_buffer;
 SemaphoreHandle_t sem_tx_uart;
 SemaphoreHandle_t sem_adc;
 QueueHandle_t uart_rx_q;
+QueueHandle_t button_rx_q;
+TimerHandle_t button_timer;
 
 uint16_t sin_wave[256] = {
     2048, 2098, 2148, 2199, 2249, 2299, 2349, 2399, 2448, 2498, 2547, 2596,
@@ -127,6 +130,7 @@ static void MX_TIM3_Init(void);
 static void MX_DAC1_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_LPUART1_UART_Init(void);
+static void MX_TIM4_Init(void);
 void StartDefaultTask(void const *argument);
 
 /* USER CODE BEGIN PFP */
@@ -141,7 +145,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     portBASE_TYPE pxHigherPriorityTaskWoken = pdFALSE;
     char data = huart->Instance->RDR;
     xQueueSendFromISR(uart_rx_q, &data, &pxHigherPriorityTaskWoken);
-    HAL_UART_Receive_IT(&hlpuart1, (uint8_t *)&uart_data, 1);
     portYIELD_FROM_ISR(pxHigherPriorityTaskWoken);
 }
 
@@ -262,6 +265,47 @@ void HAL_DAC_ConvCpltCallbackCh1(DAC_HandleTypeDef *hadc) {
 #endif
 }
 
+// #define BUTTON_0 (uint8_t) GPIO_PIN_13
+
+// BaseType_t get_button(uint8_t *button, TickType_t timeout) {
+//     return xQueueReceive(button_rx_q, button, timeout);
+// }
+
+// static void keyboard_task(void *param) {
+//     uint8_t button;
+//     char buffer[512];
+//     while (1) {
+//         (void)get_button(&button, portMAX_DELAY);
+//         if (button == BUTTON_0) {
+//             vTaskList(buffer);
+//             printk(buffer, 10);
+//         }
+//     }
+// }
+
+// void button_cb(TimerHandle_t xTimer) {
+//     (void)xTimer;
+//     if (HAL_GPIO_ReadPin(GPIOC, BUTTON_0) == GPIO_PIN_RESET) {
+//         // guardar em uma fila de botões
+//         uint8_t button = BUTTON_0;
+//         xQueueSend(button_rx_q, &button, 0);
+//     }
+//     __HAL_GPIO_EXTI_CLEAR_IT(BUTTON_0);
+//     HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+// }
+
+// // volatile uint32_t cnt = 0;
+// void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+//     if (GPIO_Pin == GPIO_PIN_13) {
+//         // cnt++;
+//         HAL_NVIC_DisableIRQ(EXTI15_10_IRQn);
+//         portBASE_TYPE pxHigherPriorityTaskWoken = pdFALSE;
+//         // xSemaphoreGiveFromISR(sem_button, &pxHigherPriorityTaskWoken);
+//         xTimerStartFromISR(button_timer, &pxHigherPriorityTaskWoken);
+//         portYIELD_FROM_ISR(pxHigherPriorityTaskWoken);
+//     }
+// }
+
 /* ---------------- Get Installed Tasks ---------------- */
 
 static BaseType_t getInstalledTasksFunction(char *pcWriteBuffer,
@@ -270,21 +314,6 @@ static BaseType_t getInstalledTasksFunction(char *pcWriteBuffer,
     (void)xWriteBufferLen;
     vTaskList(pcWriteBuffer);
     return pdFALSE;
-
-    // static BaseType_t state = 0;
-
-    // if (state == 0) {
-    //     // char *head = "Name		State  Priority  Stack
-    //     Number\n\r"; (void)xWriteBufferLen; vTaskList(pcWriteBuffer);
-    //     // strcpy(pcWriteBuffer, head);
-    //     // vTaskList(&pcWriteBuffer[strlen(head)]);
-    //     state = 1;
-    //     return pdTRUE;
-    // } else {
-    //     state = 0;
-    //     strcpy(pcWriteBuffer, "\n\r");
-    //     return pdFALSE;
-    // }
 }
 
 static const CLI_Command_Definition_t xGetInstalledTasksCommand = {
@@ -295,10 +324,11 @@ static const CLI_Command_Definition_t xGetInstalledTasksCommand = {
 static BaseType_t getRuntimeStatsFunction(char *pcWriteBuffer,
                                           size_t xWriteBufferLen,
                                           const char *pcCommandString) {
-    char *head = "Name		Abs Time      % Time\n\r";
-    (void)xWriteBufferLen;
-    strcpy(pcWriteBuffer, head);
-    vTaskGetRunTimeStats(&pcWriteBuffer[strlen(head)]);
+    static const char *pcHeader =
+        "Task            Runtime\r\n--------------------------------\r\n";
+    vTaskGetRunTimeStats(pcWriteBuffer);
+    snprintf(pcWriteBuffer + strlen(pcWriteBuffer),
+             xWriteBufferLen - strlen(pcWriteBuffer), "%s", pcHeader);
     return pdFALSE;
 }
 
@@ -356,15 +386,16 @@ static const CLI_Command_Definition_t xClearTerminalCommand = {
 /* ---------------- Terminal Task ---------------- */
 
 #define MAX_INPUT_LENGTH 50
-#define MAX_OUTPUT_LENGTH 100
+#define MAX_OUTPUT_LENGTH 512
 
 void terminal_task(void *params) {
     int8_t cRxedChar, cInputIndex = 0;
     BaseType_t xMoreDataToFollow;
 
     /* Buffers de entrada e saída */
-    static int8_t pcInputString[MAX_INPUT_LENGTH];
-    static int8_t pcOutputString[MAX_OUTPUT_LENGTH];
+    int8_t pcInputString[MAX_INPUT_LENGTH];
+    int8_t pcOutputString[MAX_OUTPUT_LENGTH];
+    memset(pcInputString, 0x00, MAX_INPUT_LENGTH);
 
     FreeRTOS_CLIRegisterCommand(&xGetInstalledTasksCommand);
     FreeRTOS_CLIRegisterCommand(&xGetRuntimeCommand);
@@ -403,7 +434,7 @@ void terminal_task(void *params) {
         } else {
             if (cRxedChar == '\n') {
                 // Ignora o \n
-            } else if (cRxedChar == '\b') {
+            } else if (cRxedChar == '\b' || cRxedChar == 127) {
                 /* Tratamento do backspace */
                 if (cInputIndex > 0) {
                     cInputIndex--;
@@ -459,6 +490,7 @@ int main(void) {
     MX_DAC1_Init();
     MX_TIM2_Init();
     MX_LPUART1_UART_Init();
+    MX_TIM4_Init();
     /* USER CODE BEGIN 2 */
 
     /* USER CODE END 2 */
@@ -485,6 +517,7 @@ int main(void) {
 
     message_buffer = xMessageBufferCreate(BUFFER_SIZE);
     uart_rx_q = xQueueCreate(32, sizeof(char));
+    button_rx_q = xQueueCreate(128, sizeof(uint8_t));
     /* USER CODE END RTOS_QUEUES */
 
     /* Create the thread(s) */
@@ -494,8 +527,9 @@ int main(void) {
 
     /* USER CODE BEGIN RTOS_THREADS */
 
-    (void)xTaskCreate(terminal_task, "Console", 256, NULL, 3, NULL);
-    (void)xTaskCreate(print_task, "Print Task", 256, NULL, 10, NULL);
+    (void)xTaskCreate(terminal_task, "Console", 512, NULL, 3, NULL);
+    (void)xTaskCreate(print_task, "Print Task", 512, NULL, 2, NULL);
+    //    (void)xTaskCreate(keyboard_task, "Keyboard Task", 256, NULL, 2, NULL);
     (void)xTaskCreate(adc_task, "ADC", 2048, NULL, 6, NULL);
 
     /* USER CODE END RTOS_THREADS */
@@ -779,6 +813,46 @@ static void MX_TIM3_Init(void) {
 }
 
 /**
+ * @brief TIM4 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_TIM4_Init(void) {
+    /* USER CODE BEGIN TIM4_Init 0 */
+
+    /* USER CODE END TIM4_Init 0 */
+
+    TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+    TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+    /* USER CODE BEGIN TIM4_Init 1 */
+
+    /* USER CODE END TIM4_Init 1 */
+    htim4.Instance = TIM4;
+    htim4.Init.Prescaler = 0;
+    htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
+    htim4.Init.Period = 16999;
+    htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+    if (HAL_TIM_Base_Init(&htim4) != HAL_OK) {
+        Error_Handler();
+    }
+    sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+    if (HAL_TIM_ConfigClockSource(&htim4, &sClockSourceConfig) != HAL_OK) {
+        Error_Handler();
+    }
+    sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+    sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+    if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig) !=
+        HAL_OK) {
+        Error_Handler();
+    }
+    /* USER CODE BEGIN TIM4_Init 2 */
+
+    /* USER CODE END TIM4_Init 2 */
+}
+
+/**
  * Enable DMA controller clock
  */
 static void MX_DMA_Init(void) {
@@ -805,17 +879,26 @@ static void MX_DMA_Init(void) {
  * @retval None
  */
 static void MX_GPIO_Init(void) {
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
     /* USER CODE BEGIN MX_GPIO_Init_1 */
     /* USER CODE END MX_GPIO_Init_1 */
 
     /* GPIO Ports Clock Enable */
+    __HAL_RCC_GPIOC_CLK_ENABLE();
     __HAL_RCC_GPIOA_CLK_ENABLE();
+
+    /*Configure GPIO pin : B1_button_Pin */
+    GPIO_InitStruct.Pin = B1_button_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(B1_button_GPIO_Port, &GPIO_InitStruct);
 
     /* USER CODE BEGIN MX_GPIO_Init_2 */
     /* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
+extern unsigned int ulHighFrequencyTimerTicks;
 
 /* USER CODE END 4 */
 
@@ -851,6 +934,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
         HAL_IncTick();
     }
     /* USER CODE BEGIN Callback 1 */
+    if (htim->Instance == TIM4) {
+        ulHighFrequencyTimerTicks++;
+    }
 
     /* USER CODE END Callback 1 */
 }
