@@ -193,7 +193,6 @@ void adc_task(void *param) {
     uint16_t adcBuffer[256];
     float ReIm[256 * 2];
     float mod[256];
-    // uint32_t count = 0;
 
     HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adcBuffer, 256);
     HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1,
@@ -205,8 +204,6 @@ void adc_task(void *param) {
 
     while (1) {
         xSemaphoreTake(sem_adc, portMAX_DELAY);
-
-        // volatile TickType_t start = xTaskGetTickCount();
 
         int k = 0;
         for (int i = 0; i < 256; i++) {
@@ -311,8 +308,13 @@ void HAL_DAC_ConvCpltCallbackCh1(DAC_HandleTypeDef *hadc) {
 static BaseType_t getInstalledTasksFunction(char *pcWriteBuffer,
                                             size_t xWriteBufferLen,
                                             const char *pcCommandString) {
-    (void)xWriteBufferLen;
-    vTaskList(pcWriteBuffer);
+    static const char *pcHeader =
+        "Task                         State  Priority   Stack  "
+        "Number\r\n------------------------------------------------------------"
+        "--\r\n ";
+
+    strcpy(pcWriteBuffer, pcHeader);
+    vTaskList(pcWriteBuffer + strlen(pcHeader));
     return pdFALSE;
 }
 
@@ -325,10 +327,11 @@ static BaseType_t getRuntimeStatsFunction(char *pcWriteBuffer,
                                           size_t xWriteBufferLen,
                                           const char *pcCommandString) {
     static const char *pcHeader =
-        "Task            Runtime\r\n--------------------------------\r\n";
-    vTaskGetRunTimeStats(pcWriteBuffer);
-    snprintf(pcWriteBuffer + strlen(pcWriteBuffer),
-             xWriteBufferLen - strlen(pcWriteBuffer), "%s", pcHeader);
+        "Task                          Runtime          CPU "
+        "Usage\r\n----------------------------------------------------------"
+        "\r\n";
+    strcpy(pcWriteBuffer, pcHeader);
+    vTaskGetRunTimeStats(pcWriteBuffer + strlen(pcHeader));
     return pdFALSE;
 }
 
